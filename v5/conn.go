@@ -177,6 +177,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 			defaultQueryExecMode = QueryExecModeDescribeExec
 		case "exec":
 			defaultQueryExecMode = QueryExecModeExec
+		case "bind_exec":
+			defaultQueryExecMode = QueryExecModeBindExec
 		case "simple_protocol":
 			defaultQueryExecMode = QueryExecModeSimpleProtocol
 		default:
@@ -724,6 +726,8 @@ const (
 	// should only be used if connecting to a proxy server, connection pool server, or non-PostgreSQL server that does
 	// not support the extended protocol.
 	QueryExecModeSimpleProtocol
+
+	QueryExecModeBindExec
 )
 
 func (m QueryExecMode) String() string {
@@ -736,6 +740,8 @@ func (m QueryExecMode) String() string {
 		return "describe exec"
 	case QueryExecModeExec:
 		return "exec"
+	case QueryExecModeBindExec:
+		return "bind exec"
 	case QueryExecModeSimpleProtocol:
 		return "simple protocol"
 	default:
@@ -833,10 +839,14 @@ optionLoop:
 
 	var err error
 	sd, explicitPreparedStatement := c.preparedStatements[sql]
-	if sd != nil || mode == QueryExecModeCacheStatement || mode == QueryExecModeCacheDescribe || mode == QueryExecModeDescribeExec {
+	if sd != nil ||
+		mode == QueryExecModeCacheStatement ||
+		mode == QueryExecModeCacheDescribe ||
+		mode == QueryExecModeDescribeExec ||
+		mode == QueryExecModeBindExec {
 		if sd == nil {
 			switch mode {
-			case QueryExecModeCacheStatement:
+			case QueryExecModeCacheStatement, QueryExecModeBindExec:
 				if c.statementCache == nil {
 					err = errDisabledStatementCache
 					rows.fatal(err)
@@ -859,7 +869,7 @@ optionLoop:
 				}
 				sd = c.descriptionCache.Get(sql)
 				if sd == nil {
-					sd, err = c.Prepare(ctx, "select", sql)
+					sd, err = c.Prepare(ctx, "", sql)
 					if err != nil {
 						rows.fatal(err)
 						return rows, err
@@ -867,7 +877,7 @@ optionLoop:
 					c.descriptionCache.Put(sd)
 				}
 			case QueryExecModeDescribeExec:
-				sd, err = c.Prepare(ctx, "select", sql)
+				sd, err = c.Prepare(ctx, "", sql)
 				if err != nil {
 					rows.fatal(err)
 					return rows, err
@@ -900,7 +910,9 @@ optionLoop:
 		}
 
 		if !explicitPreparedStatement && mode == QueryExecModeCacheDescribe {
-			rows.resultReader = c.pgConn.BindExec(ctx, sd.Name, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, resultFormats)
+			rows.resultReader = c.pgConn.ExecParams(ctx, sd.Name, c.eqb.ParamValues, sd.ParamOIDs, c.eqb.ParamFormats, resultFormats)
+		} else if mode == QueryExecModeBindExec {
+			rows.resultReader = c.pgConn.BindExec(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, resultFormats)
 		} else {
 			rows.resultReader = c.pgConn.ExecPrepared(ctx, sd.Name, c.eqb.ParamValues, c.eqb.ParamFormats, resultFormats)
 		}

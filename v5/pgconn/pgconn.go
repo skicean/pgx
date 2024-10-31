@@ -1039,7 +1039,7 @@ func (pgConn *PgConn) ExecParams(ctx context.Context, sql string, paramValues []
 	return result
 }
 
-func (pgConn *PgConn) BindExec(ctx context.Context, stmtName string, paramValues [][]byte, paramOIDs []uint32, paramFormats []int16, resultFormats []int16) *ResultReader {
+func (pgConn *PgConn) BindExec(ctx context.Context, stmtName string, paramValues [][]byte, paramFormats []int16, resultFormats []int16) *ResultReader {
 	result := pgConn.execExtendedPrefix(ctx, paramValues)
 	if result.closed {
 		return result
