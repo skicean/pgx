@@ -420,13 +420,6 @@ func (c *Conn) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.C
 		return pgconn.CommandTag{}, err
 	}
 
-	if sql[0] == ':' {
-		if arguments == nil {
-			return c.aeExec(ctx, sql)
-		}
-		return c.aeExec(ctx, sql, arguments)
-	}
-
 	commandTag, err := c.exec(ctx, sql, arguments...)
 
 	if c.queryTracer != nil {
@@ -470,82 +463,6 @@ optionLoop:
 		return c.execPrepared(ctx, sd, arguments)
 	}
 
-	switch mode {
-	case QueryExecModeCacheStatement:
-		if c.statementCache == nil {
-			return pgconn.CommandTag{}, errDisabledStatementCache
-		}
-		sd := c.statementCache.Get(sql)
-		if sd == nil {
-			sd, err = c.Prepare(ctx, stmtcache.NextStatementName(), sql)
-			if err != nil {
-				return pgconn.CommandTag{}, err
-			}
-			c.statementCache.Put(sd)
-		}
-
-		return c.execPrepared(ctx, sd, arguments)
-	case QueryExecModeCacheDescribe:
-		if c.descriptionCache == nil {
-			return pgconn.CommandTag{}, errDisabledDescriptionCache
-		}
-		sd := c.descriptionCache.Get(sql)
-		if sd == nil {
-			sd, err = c.Prepare(ctx, "", sql)
-			if err != nil {
-				return pgconn.CommandTag{}, err
-			}
-		}
-
-		return c.execParams(ctx, sd, arguments)
-	case QueryExecModeDescribeExec:
-		sd, err := c.Prepare(ctx, "", sql)
-		if err != nil {
-			return pgconn.CommandTag{}, err
-		}
-		return c.execPrepared(ctx, sd, arguments)
-	case QueryExecModeExec:
-		return c.execSQLParams(ctx, sql, arguments)
-	case QueryExecModeSimpleProtocol:
-		return c.execSimpleProtocol(ctx, sql, arguments)
-	default:
-		return pgconn.CommandTag{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
-	}
-}
-
-func (c *Conn) aeExec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error) {
-	mode := c.config.DefaultQueryExecMode
-	var queryRewriter QueryRewriter
-
-optionLoop:
-	for len(arguments) > 0 {
-		switch arg := arguments[0].(type) {
-		case QueryExecMode:
-			mode = arg
-			arguments = arguments[1:]
-		case QueryRewriter:
-			queryRewriter = arg
-			arguments = arguments[1:]
-		default:
-			break optionLoop
-		}
-	}
-
-	if queryRewriter != nil {
-		sql, arguments, err = queryRewriter.RewriteQuery(ctx, c, sql, arguments)
-		if err != nil {
-			return pgconn.CommandTag{}, fmt.Errorf("rewrite query failed: %v", err)
-		}
-	}
-
-	// Always use simple protocol when there are no arguments.
-	if len(arguments) == 0 {
-		mode = QueryExecModeSimpleProtocol
-	}
-
-	if sd, ok := c.preparedStatements[sql]; ok {
-		return c.execPrepared(ctx, sd, arguments)
-	}
 	switch mode {
 	case QueryExecModeCacheStatement:
 		if c.statementCache == nil {
