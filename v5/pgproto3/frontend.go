@@ -51,7 +51,6 @@ type Frontend struct {
 	readyForQuery                   ReadyForQuery
 	rowDescription                  RowDescription
 	portalSuspended                 PortalSuspended
-	aEParameter                     AEParameter
 
 	bodyLen    int
 	msgType    byte
@@ -62,8 +61,7 @@ type Frontend struct {
 // NewFrontend creates a new Frontend.
 func NewFrontend(r io.Reader, w io.Writer) *Frontend {
 	cr := newChunkReader(r, 0)
-	aEParameter := NewAEParameter()
-	return &Frontend{cr: cr, w: w, aEParameter: *aEParameter}
+	return &Frontend{cr: cr, w: w}
 }
 
 // Send sends a message to the backend (i.e. the server). The message is not guaranteed to be written until Flush is
@@ -113,10 +111,6 @@ func (f *Frontend) Trace(w io.Writer, options TracerOptions) {
 	}
 }
 
-func (f *Frontend) AEParameter(paraterName string) string {
-	return f.aEParameter.Parameter[paraterName].value
-}
-
 // Untrace stops tracing.
 func (f *Frontend) Untrace() {
 	f.tracer = nil
@@ -133,11 +127,11 @@ func (f *Frontend) SendBind(msg *Bind) {
 }
 
 func (f *Frontend) SendBindExec(msg *BindExec) {
-	//prevLen := len(f.wbuf)
+	prevLen := len(f.wbuf)
 	f.wbuf = msg.Encode(f.wbuf)
-	//if f.tracer != nil {
-	//	f.tracer.traceBindExec('F', int32(len(f.wbuf)-prevLen), msg)
-	//}
+	if f.tracer != nil {
+		f.tracer.traceBindExec('F', int32(len(f.wbuf)-prevLen), msg)
+	}
 }
 
 // SendParse sends a Parse message to the backend (i.e. the server). The message is not guaranteed to be written until
@@ -197,14 +191,6 @@ func (f *Frontend) SendQuery(msg *Query) {
 	f.wbuf = msg.Encode(f.wbuf)
 	if f.tracer != nil {
 		f.tracer.traceQuery('F', int32(len(f.wbuf)-prevLen), msg)
-	}
-}
-
-func (f *Frontend) SendAEQuery(msg *AEQuery) {
-	prevLen := len(f.wbuf)
-	f.wbuf = msg.Encode(f.wbuf)
-	if f.tracer != nil {
-		f.tracer.traceAEQuery('F', int32(len(f.wbuf)-prevLen), msg)
 	}
 }
 
@@ -278,9 +264,6 @@ func (f *Frontend) Receive() (BackendMessage, error) {
 		msg = &f.commandComplete
 	case 'd':
 		msg = &f.copyData
-	// save ae info
-	case 'e':
-		msg = &f.aEParameter
 	case 'D':
 		msg = &f.dataRow
 	case 'E':

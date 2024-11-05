@@ -355,9 +355,20 @@ func (t *tracer) traceQuery(sender byte, encodedLen int32, msg *Query) {
 	t.finishTrace()
 }
 
-func (t *tracer) traceAEQuery(sender byte, encodedLen int32, msg *AEQuery) {
-	t.beginTrace(sender, encodedLen, "AEQuery")
-	fmt.Fprintf(t.buf, "\t %s", traceDoubleQuotedString([]byte(msg.String)))
+func (t *tracer) traceBindExec(sender byte, encodedLen int32, msg *BindExec) {
+	t.beginTrace(sender, encodedLen, "BindExec")
+	fmt.Fprintf(t.buf, "\t %s %s %d", traceDoubleQuotedString([]byte(msg.DestinationPortal)), traceDoubleQuotedString([]byte(msg.PreparedStatement)), len(msg.ParameterFormatCodes))
+	for _, fc := range msg.ParameterFormatCodes {
+		fmt.Fprintf(t.buf, " %d", fc)
+	}
+	fmt.Fprintf(t.buf, " %d", len(msg.Parameters))
+	for _, p := range msg.Parameters {
+		fmt.Fprintf(t.buf, " %s", traceSingleQuotedString(p))
+	}
+	fmt.Fprintf(t.buf, " %d", len(msg.ResultFormatCodes))
+	for _, fc := range msg.ResultFormatCodes {
+		fmt.Fprintf(t.buf, " %d", fc)
+	}
 	t.finishTrace()
 }
 

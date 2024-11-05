@@ -23,15 +23,6 @@ import (
 	"github.com/skicean/pgx/v5/pgproto3"
 )
 
-const (
-	CONNECT_NORMAL    = 0 // 0: normal conn
-	CONNECT_INNER     = 1 // 1: inner conn
-	CONNECT_HEARTBEAT = 2 // 2: heartbeat
-	CONNECT_KMM       = 3 // 3: kmm should replace inner conn later
-	CONNECT_REGISTER  = 4 // 4: register token
-	CONNECT_MAX_TYPE  = 5
-)
-
 type AfterConnectFunc func(ctx context.Context, pgconn *PgConn) error
 type ValidateConnectFunc func(ctx context.Context, pgconn *PgConn) error
 type GetSSLPasswordFunc func(ctx context.Context) string
@@ -44,15 +35,6 @@ type Config struct {
 	Database       string
 	User           string
 	Password       string
-	Mode           string
-	Portal         string
-	Tenant         string
-	Instance       string
-	Conn_Id        string
-	Shm_Id         string
-	Token          string
-	ConnType       string
-	Ts_Url_Expect  string
 	TLSConfig      *tls.Config // nil disables TLS
 	ConnectTimeout time.Duration
 	DialFunc       DialFunc   // e.g. net.Dialer.DialContext
@@ -277,15 +259,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		Database:             settings["database"],
 		User:                 settings["user"],
 		Password:             settings["password"],
-		Mode:                 settings["mode"],
-		Portal:               settings["portal"],
-		Tenant:               settings["tenant"],
-		Instance:             settings["instance"],
-		Shm_Id:               settings["shm_id"],
-		Conn_Id:              settings["conn_id"],
-		ConnType:             settings["conntype"],
-		Token:                settings["token"],
-		Ts_Url_Expect:        settings["ts_url_expect"],
 		RuntimeParams:        make(map[string]string),
 		BuildFrontend: func(r io.Reader, w io.Writer) *pgproto3.Frontend {
 			return pgproto3.NewFrontend(r, w)
@@ -307,14 +280,11 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.LookupFunc = makeDefaultResolver().LookupHost
 
 	notRuntimeParams := map[string]struct{}{
-		"host":     {},
-		"port":     {},
-		"database": {},
-		"user":     {},
-		"password": {},
-		// "mode":     {},
-		// "tenant":               {},
-		// "portal":               {},
+		"host":                 {},
+		"port":                 {},
+		"database":             {},
+		"user":                 {},
+		"password":             {},
 		"passfile":             {},
 		"connect_timeout":      {},
 		"sslmode":              {},
@@ -328,12 +298,6 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"target_session_attrs": {},
 		"service":              {},
 		"servicefile":          {},
-		// "instance":             {},
-		// "conn_id":              {},
-		// "shm_id":               {},
-		// "token":                {},
-		// "conntype":             {},
-		// "ts_url_expect":        {},
 	}
 
 	// Adding kerberos configuration
@@ -395,23 +359,16 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	config.Port = fallbacks[0].Port
 	config.TLSConfig = fallbacks[0].TLSConfig
 	config.Fallbacks = fallbacks[1:]
-	conntype, _ := strconv.Atoi(settings["conntype"])
-	/* inner connect use this to authentication */
-	if settings["conntype"] != "" && conntype == CONNECT_INNER {
-		if settings["token"] != "" && settings["token"] != "0" {
-			config.Password = settings["token"]
-		}
-	} else {
-		passfile, err := pgpassfile.ReadPassfile(settings["passfile"])
-		if err == nil {
-			if config.Password == "" {
-				host := config.Host
-				if network, _ := NetworkAddress(config.Host, config.Port); network == "unix" {
-					host = "localhost"
-				}
 
-				config.Password = passfile.FindPassword(host, strconv.Itoa(int(config.Port)), config.Database, config.User)
+	passfile, err := pgpassfile.ReadPassfile(settings["passfile"])
+	if err == nil {
+		if config.Password == "" {
+			host := config.Host
+			if network, _ := NetworkAddress(config.Host, config.Port); network == "unix" {
+				host = "localhost"
 			}
+
+			config.Password = passfile.FindPassword(host, strconv.Itoa(int(config.Port)), config.Database, config.User)
 		}
 	}
 
@@ -468,15 +425,6 @@ func parseEnvSettings() map[string]string {
 		"PGTARGETSESSIONATTRS": "target_session_attrs",
 		"PGSERVICE":            "service",
 		"PGSERVICEFILE":        "servicefile",
-		"KDPINSTANCE":          "instance",      /* instance name */
-		"KDPTENANT":            "tenant",        /* tenant name */
-		"KDPPORTAL":            "portal",        /* portal name */
-		"KDPMODE":              "mode",          /* connection mode */
-		"KDCONNECTIONID":       "conn_id",       /* connection id */
-		"KDPSHMID":             "shm_id",        /* share memory id */
-		"TOKEN":                "token",         /* inner connect use this to authentication */
-		"CONNTYPE":             "conntype",      /* 0: normal conn; 1: inner conn; 2: heartbeat */
-		"KDPTSURLEXPECT":       "ts_url_expect", /* expected connected ts url */
 	}
 
 	for envname, realname := range nameMap {

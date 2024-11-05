@@ -216,11 +216,6 @@ func ParseConfig(connString string) (*ConnConfig, error) {
 	return ParseConfigWithOptions(connString, ParseConfigOptions{})
 }
 
-// 获取AE参数
-func AEParameter(c *Conn, paraName string) string {
-	return c.pgConn.Frontend().AEParameter(paraName)
-}
-
 // connect connects to a database. connect takes ownership of config. The caller must not use or access it again.
 func connect(ctx context.Context, config *ConnConfig) (c *Conn, err error) {
 	if connectTracer, ok := config.Tracer.(ConnectTracer); ok {
@@ -303,7 +298,6 @@ func (c *Conn) Prepare(ctx context.Context, name, sql string) (sd *pgconn.Statem
 	if name != "" {
 		var ok bool
 		if sd, ok = c.preparedStatements[name]; ok {
-			panic(fmt.Sprintf("prepare le repeat table %s", name))
 			if sd.SQL == sql {
 				if c.prepareTracer != nil {
 					c.prepareTracer.TracePrepareEnd(ctx, c, TracePrepareEndData{AlreadyPrepared: true})
@@ -378,10 +372,6 @@ func (c *Conn) WaitForNotification(ctx context.Context) (*pgconn.Notification, e
 // IsClosed reports if the connection has been closed.
 func (c *Conn) IsClosed() bool {
 	return c.pgConn.IsClosed()
-}
-
-func (c *Conn) GetColumnsValue() []string {
-	return c.PgConn().Columns()
 }
 
 func (c *Conn) die(err error) {
@@ -593,7 +583,7 @@ optionLoop:
 	case QueryExecModeExec:
 		return c.execSQLParams(ctx, sql, arguments)
 	case QueryExecModeSimpleProtocol:
-		return c.execAESimpleProtocol(ctx, sql, arguments)
+		return c.execSimpleProtocol(ctx, sql, arguments)
 	default:
 		return pgconn.CommandTag{}, fmt.Errorf("unknown QueryExecMode: %v", mode)
 	}
@@ -608,22 +598,6 @@ func (c *Conn) execSimpleProtocol(ctx context.Context, sql string, arguments []a
 	}
 
 	mrr := c.pgConn.Exec(ctx, sql)
-	for mrr.NextResult() {
-		commandTag, err = mrr.ResultReader().Close()
-	}
-	err = mrr.Close()
-	return commandTag, err
-}
-
-func (c *Conn) execAESimpleProtocol(ctx context.Context, sql string, arguments []any) (commandTag pgconn.CommandTag, err error) {
-	if len(arguments) > 0 {
-		sql, err = c.sanitizeForSimpleQuery(sql, arguments...)
-		if err != nil {
-			return pgconn.CommandTag{}, err
-		}
-	}
-
-	mrr := c.pgConn.AEExec(ctx, sql)
 	for mrr.NextResult() {
 		commandTag, err = mrr.ResultReader().Close()
 	}

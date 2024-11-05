@@ -369,7 +369,6 @@ func connect(ctx context.Context, config *Config, fallbackConfig *FallbackConfig
 		case *pgproto3.ErrorResponse:
 			pgConn.conn.Close()
 			return nil, ErrorResponseToPgError(msg)
-		case *pgproto3.AEParameter:
 
 		default:
 			pgConn.conn.Close()
@@ -515,15 +514,6 @@ func (pgConn *PgConn) receiveMessage() (pgproto3.BackendMessage, error) {
 // Conn returns the underlying net.Conn. This rarely necessary.
 func (pgConn *PgConn) Conn() net.Conn {
 	return pgConn.conn
-}
-
-// Columns get results columns name
-func (pgConn *PgConn) Columns() []string {
-	names := make([]string, 0)
-	for _, name := range pgConn.resultReader.fieldDescriptions {
-		names = append(names, name.Name)
-	}
-	return names
 }
 
 // PID returns the backend PID.
@@ -955,45 +945,6 @@ func (pgConn *PgConn) Exec(ctx context.Context, sql string) *MultiResultReader {
 	}
 
 	pgConn.frontend.SendQuery(&pgproto3.Query{String: sql})
-	err := pgConn.frontend.Flush()
-	if err != nil {
-		pgConn.asyncClose()
-		pgConn.contextWatcher.Unwatch()
-		multiResult.closed = true
-		multiResult.err = err
-		pgConn.unlock()
-		return multiResult
-	}
-
-	return multiResult
-}
-
-func (pgConn *PgConn) AEExec(ctx context.Context, sql string) *MultiResultReader {
-	if err := pgConn.lock(); err != nil {
-		return &MultiResultReader{
-			closed: true,
-			err:    err,
-		}
-	}
-
-	pgConn.multiResultReader = MultiResultReader{
-		pgConn: pgConn,
-		ctx:    ctx,
-	}
-	multiResult := &pgConn.multiResultReader
-	if ctx != context.Background() {
-		select {
-		case <-ctx.Done():
-			multiResult.closed = true
-			multiResult.err = newContextAlreadyDoneError(ctx)
-			pgConn.unlock()
-			return multiResult
-		default:
-		}
-		pgConn.contextWatcher.Watch(ctx)
-	}
-
-	pgConn.frontend.SendAEQuery(&pgproto3.AEQuery{String: sql})
 	err := pgConn.frontend.Flush()
 	if err != nil {
 		pgConn.asyncClose()
